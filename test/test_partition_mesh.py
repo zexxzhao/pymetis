@@ -3,7 +3,7 @@ import pymetis
 import pytest
 
 
-def test_2d_quad_mesh(vis=False):
+def test_2d_quad_mesh_nodal(vis=False):
     n_cells_x = 70
     n_cells_y = 50
     points, connectivity = generate_mesh_2d(n_cells_x, n_cells_y)
@@ -47,8 +47,53 @@ def test_2d_quad_mesh(vis=False):
     assert vert_count == pytest.approx(
         [float(n_vert)/float(n_part)] * n_part, rel=0.1)
 
+def test_2d_quad_mesh_dual(vis=False):
+    n_cells_x = 70
+    n_cells_y = 50
+    points, connectivity = generate_mesh_2d(n_cells_x, n_cells_y)
 
-def test_2d_trivial_mesh_part():
+    n_part = 4
+    options = pymetis.Options("mesh")
+    options.gtype = 1
+    n_cuts, elem_part, vert_part = pymetis.part_mesh(n_part, connectivity, options)
+
+    print(n_cuts)
+    print([elem_part.count(it) for it in range(n_part)])
+    print([vert_part.count(it) for it in range(n_part)])
+
+    if vis:
+        import pyvtk
+        vtkelements = pyvtk.VtkData(
+            pyvtk.UnstructuredGrid(points, quad=connectivity),
+            "Mesh",
+            pyvtk.CellData(pyvtk.Scalars(elem_part, name="Rank"))
+        )
+        vtkelements.tofile("quad.vtk")
+
+    # Assertions about partition
+    assert min(elem_part) == 0
+    assert max(elem_part) == n_part-1
+    assert min(vert_part) == 0
+    assert max(vert_part) == n_part-1
+
+    assert len(elem_part) == n_cells_x*n_cells_y
+    assert len(vert_part) == (n_cells_x+1)*(n_cells_y+1)
+
+    # Test that the partition assigns approx the same number of elements/vertices
+    # to each partition
+    n_elem = n_cells_x*n_cells_y
+    elem_count = [elem_part.count(it) for it in range(n_part)]
+    assert elem_count == pytest.approx(
+        [float(n_elem)/float(n_part)] * n_part, rel=0.1)
+
+    # Test that the partition assigns approx the same number of elements/vertices
+    # to each partition
+    n_vert = (n_cells_x+1)*(n_cells_y+1)
+    vert_count = [vert_part.count(it) for it in range(n_part)]
+    assert vert_count == pytest.approx(
+        [float(n_vert)/float(n_part)] * n_part, rel=0.1)
+
+def test_2d_trivial_mesh_part_nodal():
     n_cells_x = 70
     n_cells_y = 50
     _, connectivity = generate_mesh_2d(n_cells_x, n_cells_y)
@@ -59,7 +104,20 @@ def test_2d_trivial_mesh_part():
     assert vert_part == [0] * ((n_cells_x+1)*(n_cells_y+1))
 
 
-def test_3d_hex_mesh_part(vis=False):
+def test_2d_trivial_mesh_part_dual():
+    n_cells_x = 70
+    n_cells_y = 50
+    _, connectivity = generate_mesh_2d(n_cells_x, n_cells_y)
+
+    options = pymetis.Options("mesh")
+    options.gtype = 1
+    n_cuts, elem_part, vert_part = pymetis.part_mesh(1, connectivity, options)
+    assert n_cuts == 0
+    assert elem_part == [0] * (n_cells_x*n_cells_y)
+    assert vert_part == [0] * ((n_cells_x+1)*(n_cells_y+1))
+
+
+def test_3d_hex_mesh_part_nodal(vis=False):
     n_cells_x = 70
     n_cells_y = 50
     n_cells_z = 37
@@ -67,6 +125,50 @@ def test_3d_hex_mesh_part(vis=False):
 
     n_part = 5
     n_cuts, elem_part, vert_part = pymetis.part_mesh(n_part, connectivity)
+
+    if vis:
+        import pyvtk
+        vtkelements = pyvtk.VtkData(
+            pyvtk.UnstructuredGrid(points, hexahedron=connectivity),
+            "Mesh",
+            pyvtk.CellData(pyvtk.Scalars(elem_part, name="Rank"))
+        )
+        vtkelements.tofile("hex.vtk")
+
+    # Assertions about partition
+    assert min(elem_part) == 0
+    assert max(elem_part) == n_part-1
+    assert min(vert_part) == 0
+    assert max(vert_part) == n_part-1
+
+    assert len(elem_part) == n_cells_x*n_cells_y*n_cells_z
+    assert len(vert_part) == (n_cells_x+1)*(n_cells_y+1)*(n_cells_z+1)
+
+    # Test that the partition assigns approx the same number of elements/vertices
+    # to each partition
+    n_elem = n_cells_x*n_cells_y*n_cells_z
+    elem_count = [elem_part.count(it) for it in range(n_part)]
+    assert elem_count == pytest.approx(
+        [float(n_elem)/float(n_part)] * n_part, rel=0.1)
+
+    # Test that the partition assigns approx the same number of elements/vertices
+    # to each partition
+    n_vert = (n_cells_x+1)*(n_cells_y+1)*(n_cells_z+1)
+    vert_count = [vert_part.count(it) for it in range(n_part)]
+    assert vert_count == pytest.approx(
+        [float(n_vert)/float(n_part)] * n_part, rel=0.1)
+
+
+def test_3d_hex_mesh_part_daul(vis=False):
+    n_cells_x = 70
+    n_cells_y = 50
+    n_cells_z = 37
+    points, connectivity = generate_mesh_3d(n_cells_x, n_cells_y, n_cells_z)
+
+    n_part = 5
+    options = pymetis.Options("mesh")
+    options.gtype = 1
+    n_cuts, elem_part, vert_part = pymetis.part_mesh(n_part, connectivity, options)
 
     if vis:
         import pyvtk
@@ -113,6 +215,14 @@ def test_part_mesh_named_tuple():
     assert partition.vertex_part == [0] * ((n_cells_x+1)*(n_cells_y+1))
 
     partition = pymetis.part_mesh(2, connectivity)
+    assert isinstance(partition, pymetis.MeshPartition)
+    assert hasattr(partition, "edge_cuts")
+    assert hasattr(partition, "element_part")
+    assert hasattr(partition, "vertex_part")
+
+    options = pymetis.Options("mesh")
+    options.gtype = 1
+    partition = pymetis.part_mesh(2, connectivity, options)
     assert isinstance(partition, pymetis.MeshPartition)
     assert hasattr(partition, "edge_cuts")
     assert hasattr(partition, "element_part")

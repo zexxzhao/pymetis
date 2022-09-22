@@ -30,6 +30,11 @@ namespace
   enum {
         DEFAULT = 0
   };
+  enum Mode_t{
+      METIS_MODE_DEFAULT = 0,
+      METIS_MODE_GRAPH = 1,
+      METIS_MODE_MESH = 2
+  };
 
   inline idx_t * maybe_data(vector<idx_t> & vect)
   {
@@ -111,9 +116,41 @@ namespace
         m_options[i] = value;
       }
 
-      void set_defaults()
+      void set_defaults(int mode)
       {
         METIS_SetDefaultOptions(m_options);
+        if(mode == (int)METIS_MODE_GRAPH) 
+        {
+          m_options[METIS_OPTION_PTYPE] = METIS_PTYPE_KWAY;
+          m_options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT;
+          m_options[METIS_OPTION_CTYPE] = METIS_CTYPE_SHEM;
+          m_options[METIS_OPTION_IPTYPE] = -1;
+          m_options[METIS_OPTION_RTYPE] = -1;
+          m_options[METIS_OPTION_NO2HOP] = 0;
+          m_options[METIS_OPTION_DBGLVL] = 0;
+          m_options[METIS_OPTION_UFACTOR] = -1;
+          m_options[METIS_OPTION_MINCONN] = 1;
+          m_options[METIS_OPTION_CONTIG] = 0;
+          m_options[METIS_OPTION_SEED] = -1;
+          m_options[METIS_OPTION_NITER] = 10;
+          m_options[METIS_OPTION_NCUTS] = 1;
+        }
+        else if(mode == (int)METIS_MODE_MESH)
+        {
+          m_options[METIS_OPTION_PTYPE] = METIS_PTYPE_KWAY;
+          m_options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT;
+          m_options[METIS_OPTION_CTYPE] = METIS_CTYPE_SHEM;
+          m_options[METIS_OPTION_IPTYPE] = METIS_IPTYPE_GROW;
+          m_options[METIS_OPTION_GTYPE] = METIS_GTYPE_NODAL;
+          m_options[METIS_OPTION_RTYPE] = -1;
+          m_options[METIS_OPTION_DBGLVL] = 0;
+          m_options[METIS_OPTION_UFACTOR] = -1;
+          m_options[METIS_OPTION_MINCONN] = 0;
+          m_options[METIS_OPTION_CONTIG] = 0;
+          m_options[METIS_OPTION_SEED] = -1;
+          m_options[METIS_OPTION_NITER] = 10;
+          m_options[METIS_OPTION_NCUTS] = 1;
+        }
       }
   };
 
@@ -151,8 +188,7 @@ namespace
       const py::object &adjncy_py,
       const py::object &vwgt_py,
       const py::object &adjwgt_py,
-      metis_options &options,
-      bool recursive)
+      metis_options &options)
   {
     idx_t nvtxs = py::len(xadj_py) - 1;
     vector<idx_t> xadj, adjncy, vwgt, adjwgt;
@@ -179,7 +215,7 @@ namespace
     idx_t edgecut;
     std::unique_ptr<idx_t []> part(new idx_t[nvtxs]);
 
-    if (recursive)
+    if (options.get(METIS_OPTION_PTYPE) == METIS_PTYPE_RB)
     {
       int info = METIS_PartGraphRecursive(
         &nvtxs, &ncon, &xadj.front(), &adjncy.front(),
@@ -188,7 +224,7 @@ namespace
 
       assert_ok(info, "METIS_PartGraphRecursive failed");
     }
-    else
+    else if(options.get(METIS_OPTION_PTYPE) == METIS_PTYPE_KWAY)
     {
       int info = METIS_PartGraphKway(
         &nvtxs, &ncon, &xadj.front(), &adjncy.front(),
@@ -219,11 +255,29 @@ namespace
     COPY_IDXTYPE_LIST(connectivityOffsets);
     COPY_IDXTYPE_LIST(connectivity);
 
-    int info = METIS_PartMeshNodal(&nElements, &nVertex,
-      connectivityOffsets.data(), connectivity.data(),
-      nullptr, nullptr, &nParts, nullptr, options.m_options,
-      &edgeCuts, elemPart.get(), vertPart.get());
-    assert_ok(info, "METIS_PartMeshNodal failed");
+    if(options.get(METIS_OPTION_GTYPE) == METIS_GTYPE_NODAL) 
+    {
+      int info = METIS_PartMeshNodal(&nElements, &nVertex,
+        connectivityOffsets.data(), connectivity.data(),
+        nullptr, nullptr, &nParts, nullptr, options.m_options,
+        &edgeCuts, elemPart.get(), vertPart.get());
+      assert_ok(info, "METIS_PartMeshNodal failed");
+    }
+    else if(options.get(METIS_OPTION_GTYPE) == METIS_GTYPE_DUAL) 
+    {
+      idx_t nCommon = 1;
+      idx_t objval = 1;
+      int info = METIS_PartMeshDual(&nElements, &nVertex,
+        connectivityOffsets.data(), connectivity.data(),
+        nullptr, nullptr, &nCommon, &nParts, nullptr, options.m_options,
+        &objval, elemPart.get(), vertPart.get());
+      assert_ok(info, "METIS_PartMeshDual failed");
+
+    }
+    else
+    {
+        assert_ok(METIS_ERROR_INPUT, "Unrecognized gtype");
+    }
 
     COPY_OUTPUT(elemPart, nElements);
     COPY_OUTPUT(vertPart, nVertex);
@@ -251,18 +305,32 @@ PYBIND11_MODULE(_internal, m)
       [](py::object self) { return (int) METIS_OPTION_##NAME; })
     py::class_<options_indices> cls(m, "options_indices");
 
-    ADD_OPT(NCUTS);
-    ADD_OPT(NSEPS);
-    ADD_OPT(NUMBERING);
+    ADD_OPT(PTYPE);
+    ADD_OPT(OBJTYPE);
+    ADD_OPT(CTYPE);
+    ADD_OPT(IPTYPE);
+    ADD_OPT(RTYPE);
+    ADD_OPT(DBGLVL);
     ADD_OPT(NITER);
+    ADD_OPT(NCUTS);
     ADD_OPT(SEED);
-    ADD_OPT(MINCONN);
     ADD_OPT(NO2HOP);
+    ADD_OPT(MINCONN);
     ADD_OPT(CONTIG);
     ADD_OPT(COMPRESS);
     ADD_OPT(CCORDER);
     ADD_OPT(PFACTOR);
+    ADD_OPT(NSEPS);
     ADD_OPT(UFACTOR);
+    ADD_OPT(NUMBERING);
+
+    ADD_OPT(HELP);
+    ADD_OPT(TPWGTS);
+    ADD_OPT(NCOMMON);
+    ADD_OPT(NOOUTPUT);
+    ADD_OPT(BALANCE);
+    ADD_OPT(GTYPE);
+    ADD_OPT(UBVEC);
 
 #undef ADD_OPT
   }

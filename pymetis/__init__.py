@@ -68,22 +68,43 @@ class Options(OptionsBase):
     <http://glaros.dtc.umn.edu/gkhome/fetch/sw/metis/manual.pdf>`__
     for context.
 
-    .. attribute:: ncuts
-    .. attribute:: nseps
-    .. attribute:: numbering
+    .. attribute:: ptype
+    .. attribute:: objtype
+    .. attribute:: ctype
+    .. attribute:: iptype
+    .. attribute:: rtype
+    .. attribute:: dbglvl
     .. attribute:: niter
-    .. attribute:: minconn
-    .. attribute:: no2hop
+    .. attribute:: ncuts
     .. attribute:: seed
+    .. attribute:: no2hop
+    .. attribute:: minconn
     .. attribute:: contig
     .. attribute:: compress
     .. attribute:: ccorder
     .. attribute:: pfactor
+    .. attribute:: nseps
     .. attribute:: ufactor
+    .. attribute:: numbering
+
+    .. attribute:: help
+    .. attribute:: tpwgts
+    .. attribute:: ncommon
+    .. attribute:: nooutput
+    .. attribute:: balance
+    .. attribute:: gtype
+    .. attribute:: ubvec
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, mode='default', **kwargs):
         super().__init__()
+        if mode not in ['default', 'graph', 'mesh']:
+            from warnings import warn
+            warn("Unrecognized mode, use the mode.")
+            mode = 'default'
+        mode2index = {"default": 0, "graph": 1, "mesh": 2}
+        self.set_defaults(mode2index[mode]);
+
         for name, val in kwargs.items():
             setattr(self, name, val)
 
@@ -184,14 +205,17 @@ def part_graph(nparts, adjacency=None, xadj=None, adjncy=None,
     """
     xadj, adjncy = _prepare_graph(adjacency, xadj, adjncy)
 
-    if recursive is None:
-        if nparts > 8:
-            recursive = False
-        else:
-            recursive = True
 
     if options is None:
         options = Options()
+
+    if recursive is None:
+        # if recursive is not give, use recursive partition backend for nparts <= 8, and kway partition otherwise.
+        options.ptype = 0 if nparts <= 8 else 1
+    elif isinstance(recursive, bool):
+        options.ptype = not recursive
+    else:
+        raise TypeError('recursive has to be a boolean') 
 
     if contiguous is True:
         # Check that the contiguous flag isn't set twice
@@ -216,7 +240,7 @@ def part_graph(nparts, adjacency=None, xadj=None, adjncy=None,
 
     from pymetis._internal import part_graph
     return part_graph(nparts, xadj, adjncy, vweights,
-                      eweights, options, recursive)
+                      eweights, options)
 
 
 def part_mesh(n_parts, connectivity, options=None):
@@ -260,7 +284,7 @@ def part_mesh(n_parts, connectivity, options=None):
 
     # Handle option validation
     if options is None:
-        options = Options()
+        options = Options('mesh')
 
     if options.numbering not in [-1, 0]:
         raise ValueError("METIS numbering option must be set to 0 or the default")

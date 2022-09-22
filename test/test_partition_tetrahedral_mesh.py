@@ -118,6 +118,7 @@ def test_tet_mesh(visualize=False):
 
     objval, epart, npart = pymetis.part_mesh(17, mesh.elements)
 
+
     if visualize:
         import pyvtk
 
@@ -125,8 +126,21 @@ def test_tet_mesh(visualize=False):
             pyvtk.UnstructuredGrid(mesh.points, tetra=mesh.elements),
             "Mesh",
             pyvtk.CellData(pyvtk.Scalars(epart, name="partition")))
-        vtkelements.tofile("split_mesh.vtk")
+        vtkelements.tofile("split_mesh_nodal.vtk")
 
+    options = pymetis.Options("mesh")
+    options.gtype = 1
+    objval, epart, npart = pymetis.part_mesh(17, mesh.elements)
+
+
+    if visualize:
+        import pyvtk
+
+        vtkelements = pyvtk.VtkData(
+            pyvtk.UnstructuredGrid(mesh.points, tetra=mesh.elements),
+            "Mesh",
+            pyvtk.CellData(pyvtk.Scalars(epart, name="partition")))
+        vtkelements.tofile("split_mesh_dual.vtk")
 
 def test_cliques():
     adjacency_list = [
